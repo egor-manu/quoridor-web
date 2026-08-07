@@ -1,0 +1,14 @@
+{
+  "name": "Quoridor",
+  "short_name": "Quoridor",
+  "description": "A friendly, touch-first game of Quoridor against a local AI.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#102a23",
+  "theme_color": "#173d32",
+  "icons": [
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
