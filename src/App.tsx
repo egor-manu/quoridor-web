@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Board } from './components/Board'
-import { applyMove, createGame, isLegalMove } from './game/engine'
+import { applyMove, createGame, isLegalMove, shortestPathLength } from './game/engine'
 import type { AiResult, GameState, Orientation, Position, Wall } from './game/types'
 import type { Difficulty } from './ai/search'
 
@@ -8,6 +8,9 @@ interface Preferences {
   size: 7 | 9 | 11
   difficulty: Difficulty
   sound: boolean
+  showPathLengths: boolean
+  manualBoth: boolean
+  dragWalls: boolean
   adaptiveRating: number
   games: number
   wins: number
@@ -19,6 +22,9 @@ const DEFAULTS: Preferences = {
   size: 9,
   difficulty: 'medium',
   sound: true,
+  showPathLengths: false,
+  manualBoth: false,
+  dragWalls: false,
   adaptiveRating: 1000,
   games: 0,
   wins: 0,
@@ -70,6 +76,7 @@ export default function App() {
   const stateRef = useRef(state)
   const scoredGameRef = useRef<number | null>(null)
   const preScorePreferencesRef = useRef<Preferences | null>(null)
+  const manualSetupRef = useRef(preferences.manualBoth)
   const debug = useMemo(() => new URLSearchParams(location.search).get('debug') === '1', [])
 
   useEffect(() => { stateRef.current = state }, [state])
@@ -83,7 +90,7 @@ export default function App() {
       const current = stateRef.current
       setThinking(false)
       setDiagnostics({ depth: event.data.depth, nodes: event.data.nodes, elapsed: event.data.elapsed })
-      if (current.currentPlayer !== 1 || current.winner !== null || !event.data.move || !isLegalMove(current, event.data.move)) return
+      if (preferences.manualBoth || current.currentPlayer !== 1 || current.winner !== null || !event.data.move || !isLegalMove(current, event.data.move)) return
       playTone(event.data.move.type === 'wall' ? 'wall' : 'move', preferences.sound)
       setState(applyMove(current, event.data.move))
     }
@@ -91,10 +98,10 @@ export default function App() {
       requestRef.current += 1
       worker.terminate()
     }
-  }, [preferences.sound])
+  }, [preferences.manualBoth, preferences.sound])
 
   useEffect(() => {
-    if (state.currentPlayer !== 1 || state.winner !== null) return
+    if (preferences.manualBoth || state.currentPlayer !== 1 || state.winner !== null) return
     const requestId = ++requestRef.current
     setThinking(true)
     const timer = window.setTimeout(() => {
@@ -107,13 +114,14 @@ export default function App() {
       })
     }, 220)
     return () => window.clearTimeout(timer)
-  }, [preferences.adaptiveRating, preferences.difficulty, state])
+  }, [preferences.adaptiveRating, preferences.difficulty, preferences.manualBoth, state])
 
   useEffect(() => {
     if (state.winner === null || scoredGameRef.current === state.turn) return
     scoredGameRef.current = state.turn
     preScorePreferencesRef.current = preferences
     playTone('win', preferences.sound)
+    if (manualSetupRef.current) return
     setPreferences((current) => {
       const won = state.winner === 0
       const expected = 1 / (1 + 10 ** ((1050 - current.adaptiveRating) / 400))
@@ -137,19 +145,20 @@ export default function App() {
     cancelThinking()
     scoredGameRef.current = null
     preScorePreferencesRef.current = null
+    manualSetupRef.current = preferences.manualBoth
     setState(createGame(size))
     setHistory([])
     setWallMode(false)
     setSettingsOpen(false)
-  }, [cancelThinking, preferences.size])
+  }, [cancelThinking, preferences.manualBoth, preferences.size])
 
   const humanMove = useCallback((move: { type: 'pawn'; to: Position } | { type: 'wall'; wall: Wall }) => {
-    if (thinking || state.currentPlayer !== 0 || state.winner !== null || !isLegalMove(state, move)) return
+    if (thinking || (!preferences.manualBoth && state.currentPlayer !== 0) || state.winner !== null || !isLegalMove(state, move)) return
     setHistory((items) => [...items, state])
     setState(applyMove(state, move))
     setWallMode(false)
     playTone(move.type === 'wall' ? 'wall' : 'move', preferences.sound)
-  }, [preferences.sound, state, thinking])
+  }, [preferences.manualBoth, preferences.sound, state, thinking])
 
   const undo = useCallback(() => {
     const previous = history.at(-1)
@@ -185,8 +194,22 @@ export default function App() {
     setPreferences((current) => ({ ...current, adaptiveRating: DEFAULTS.adaptiveRating, games: 0, wins: 0, losses: 0 }))
   }
 
-  const humanTurn = state.currentPlayer === 0 && state.winner === null && !thinking
-  const canPlaceWall = humanTurn && state.wallsRemaining[0] > 0
+  const updateManualBoth = () => {
+    if (!preferences.manualBoth) {
+      cancelThinking()
+      manualSetupRef.current = true
+    }
+    setWallMode(false)
+    setPreferences((current) => ({ ...current, manualBoth: !current.manualBoth }))
+  }
+
+  const manualTurn = (preferences.manualBoth || state.currentPlayer === 0) && state.winner === null && !thinking
+  const controlledPlayer = preferences.manualBoth ? state.currentPlayer : 0
+  const canPlaceWall = manualTurn && state.wallsRemaining[controlledPlayer] > 0
+  const pathLengths = useMemo(
+    () => [shortestPathLength(state, 0), shortestPathLength(state, 1)] as const,
+    [state],
+  )
 
   return (
     <main className="game-shell">
@@ -206,20 +229,27 @@ export default function App() {
       </header>
 
       <section className="play-area">
-        <WallSupply player={1} remaining={state.wallsRemaining[1]} />
+        <WallSupply
+          player={1}
+          remaining={state.wallsRemaining[1]}
+          pathLength={preferences.showPathLengths ? pathLengths[1] : undefined}
+        />
         <Board
           state={state}
           wallMode={wallMode}
           orientation={orientation}
-          disabled={!humanTurn}
+          dragWalls={preferences.dragWalls}
+          disabled={!manualTurn}
           onPawnMove={(to) => humanMove({ type: 'pawn', to })}
           onWallMove={(wall) => humanMove({ type: 'wall', wall })}
         />
         <div className="human-tools">
+          {preferences.showPathLengths && <PathBadge player={0} length={pathLengths[0]} />}
           <WallButtons
-            remaining={state.wallsRemaining[0]}
+            remaining={state.wallsRemaining[controlledPlayer]}
             orientation={orientation}
             wallMode={wallMode}
+            dragMode={preferences.dragWalls}
             disabled={!canPlaceWall}
             onSelect={(nextOrientation) => {
               if (wallMode && orientation === nextOrientation) {
@@ -234,10 +264,10 @@ export default function App() {
       </section>
 
       {state.winner !== null && (
-        <div className={`result-card result-${state.winner}`} role="dialog" aria-label={state.winner === 0 ? 'You won!' : 'Opponent won'}>
+        <div className={`result-card result-${state.winner}`} role="dialog" aria-label={preferences.manualBoth ? `Player ${state.winner + 1} won` : state.winner === 0 ? 'You won!' : 'Opponent won'}>
           <div className="confetti" aria-hidden="true"><i /><i /><i /><i /><i /></div>
           <div className={`result-pawn result-pawn-${state.winner}`}><span /></div>
-          <p>{state.winner === 0 ? 'Brilliant!' : 'Good game!'}</p>
+          <p>{preferences.manualBoth ? `Player ${state.winner + 1} wins!` : state.winner === 0 ? 'Brilliant!' : 'Good game!'}</p>
           <button onClick={() => newGame()}><span>↻</span> Play again</button>
         </div>
       )}
@@ -259,6 +289,36 @@ export default function App() {
                 <button key={difficulty} className={preferences.difficulty === difficulty ? 'choice active' : 'choice'} onClick={() => updateDifficulty(difficulty)}>{difficulty}</button>
               ))}
             </SettingGroup>
+            <div className="setting-row">
+              <div><strong>Control both</strong><small>Move both players to set up a position</small></div>
+              <button
+                className={preferences.manualBoth ? 'switch on' : 'switch'}
+                onClick={updateManualBoth}
+                role="switch"
+                aria-checked={preferences.manualBoth}
+              ><span /></button>
+            </div>
+            <div className="setting-row">
+              <div><strong>Path lengths</strong><small>Show both players’ shortest routes</small></div>
+              <button
+                className={preferences.showPathLengths ? 'switch on' : 'switch'}
+                onClick={() => setPreferences((current) => ({ ...current, showPathLengths: !current.showPathLengths }))}
+                role="switch"
+                aria-checked={preferences.showPathLengths}
+              ><span /></button>
+            </div>
+            <div className="setting-row">
+              <div><strong>Drag walls</strong><small>Slide to aim, then release to place</small></div>
+              <button
+                className={preferences.dragWalls ? 'switch on' : 'switch'}
+                onClick={() => {
+                  setWallMode(false)
+                  setPreferences((current) => ({ ...current, dragWalls: !current.dragWalls }))
+                }}
+                role="switch"
+                aria-checked={preferences.dragWalls}
+              ><span /></button>
+            </div>
             <div className="setting-row">
               <div><strong>Sound</strong><small>Moves and celebrations</small></div>
               <button
@@ -283,9 +343,10 @@ export default function App() {
   )
 }
 
-function WallSupply({ player, remaining }: {
+function WallSupply({ player, remaining, pathLength }: {
   player: 0 | 1
   remaining: number
+  pathLength?: number
 }) {
   const content = (
     <>
@@ -294,18 +355,38 @@ function WallSupply({ player, remaining }: {
         {Array.from({ length: Math.min(remaining, 6) }, (_, index) => <i key={index} style={{ '--piece': index } as React.CSSProperties} />)}
       </span>
       <strong>{remaining}</strong>
+      {pathLength !== undefined && <PathBadge player={player} length={pathLength} compact />}
     </>
   )
-  return <div className={`wall-supply wall-supply-${player}`} aria-label={`Opponent has ${remaining} walls`}>{content}</div>
+  return <div className={`wall-supply wall-supply-${player} ${pathLength !== undefined ? 'with-path' : ''}`} aria-label={`Player ${player + 1} has ${remaining} walls`}>{content}</div>
 }
 
-function WallButtons({ remaining, orientation, wallMode, disabled, onSelect }: {
+function WallButtons({ remaining, orientation, wallMode, dragMode, disabled, onSelect }: {
   remaining: number
   orientation: Orientation
   wallMode: boolean
+  dragMode: boolean
   disabled: boolean
   onSelect: (orientation: Orientation) => void
 }) {
+  if (dragMode) {
+    return (
+      <div className="wall-buttons wall-buttons-drag" role="group" aria-label={`${remaining} walls remaining`}>
+        <button
+          className={`wall-button wall-button-drag ${wallMode ? 'active' : ''}`}
+          disabled={disabled}
+          onClick={() => onSelect(orientation)}
+          aria-label={`${wallMode ? 'Cancel wall placement' : 'Select a wall to drag'}, ${remaining} remaining`}
+          aria-pressed={wallMode}
+        >
+          <span className="wall-button-piece" aria-hidden="true" />
+          <span className="wall-button-arrow" aria-hidden="true">✥</span>
+          <strong>{remaining}</strong>
+        </button>
+      </div>
+    )
+  }
+
   return (
     <div className="wall-buttons" role="group" aria-label={`${remaining} walls remaining`}>
       {(['horizontal', 'vertical'] as Orientation[]).map((direction) => {
@@ -326,6 +407,15 @@ function WallButtons({ remaining, orientation, wallMode, disabled, onSelect }: {
         )
       })}
     </div>
+  )
+}
+
+function PathBadge({ player, length, compact = false }: { player: 0 | 1; length: number; compact?: boolean }) {
+  return (
+    <span className={`path-badge path-badge-${player} ${compact ? 'compact' : ''}`} aria-label={`Player ${player + 1} shortest path: ${length} moves`} title={`Shortest path: ${length}`}>
+      <i aria-hidden="true" />
+      <strong>{length}</strong>
+    </span>
   )
 }
 

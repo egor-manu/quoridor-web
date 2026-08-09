@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { getLegalPawnMoves, getLegalWalls, samePosition } from '../game/engine'
 import type { GameState, Orientation, Position, Wall } from '../game/types'
 
@@ -6,6 +6,7 @@ interface Props {
   state: GameState
   wallMode: boolean
   orientation: Orientation
+  dragWalls: boolean
   disabled: boolean
   onPawnMove: (position: Position) => void
   onWallMove: (wall: Wall) => void
@@ -15,24 +16,86 @@ const PITCH = 100
 const CELL = 82
 const INSET = 9
 
-export function Board({ state, wallMode, orientation, disabled, onPawnMove, onWallMove }: Props) {
+export function Board({ state, wallMode, orientation, dragWalls, disabled, onPawnMove, onWallMove }: Props) {
   const dimension = state.size * PITCH
+  const [dragWall, setDragWall] = useState<Wall | null>(null)
+  const activePointer = useRef<number | null>(null)
+  const dragStart = useRef<{ x: number; y: number } | null>(null)
   const legalPawnMoves = useMemo(
     () => (!disabled && !wallMode ? getLegalPawnMoves(state) : []),
     [disabled, state, wallMode],
   )
   const legalWalls = useMemo(
-    () => (!disabled && wallMode ? getLegalWalls(state, orientation) : []),
-    [disabled, orientation, state, wallMode],
+    () => (!disabled && wallMode ? getLegalWalls(state, dragWalls ? undefined : orientation) : []),
+    [disabled, dragWalls, orientation, state, wallMode],
   )
+
+  useEffect(() => {
+    setDragWall(null)
+    activePointer.current = null
+    dragStart.current = null
+  }, [disabled, dragWalls, state, wallMode])
+
+  const wallFromPointer = (event: React.PointerEvent<SVGSVGElement>): Wall | null => {
+    const start = dragStart.current
+    if (!start) return null
+    const dx = event.clientX - start.x
+    const dy = event.clientY - start.y
+    if (Math.hypot(dx, dy) < 8) return null
+
+    const bounds = event.currentTarget.getBoundingClientRect()
+    const x = (event.clientX - bounds.left) * dimension / bounds.width
+    const y = (event.clientY - bounds.top) * dimension / bounds.height
+    if (x < 0 || y < 0 || x > dimension || y > dimension) return null
+
+    const inferredOrientation: Orientation = Math.abs(dx) >= Math.abs(dy) ? 'horizontal' : 'vertical'
+    let nearest: Wall | null = null
+    let nearestDistance = Infinity
+    for (const wall of legalWalls) {
+      if (wall.orientation !== inferredOrientation) continue
+      const wallX = (wall.col + 1) * PITCH
+      const wallY = (wall.row + 1) * PITCH
+      const distance = (wallX - x) ** 2 + (wallY - y) ** 2
+      if (distance < nearestDistance) {
+        nearest = wall
+        nearestDistance = distance
+      }
+    }
+    return nearestDistance <= (PITCH * .78) ** 2 ? nearest : null
+  }
+
+  const finishDrag = (event: React.PointerEvent<SVGSVGElement>, place: boolean) => {
+    if (activePointer.current !== event.pointerId) return
+    const selected = place ? wallFromPointer(event) : null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    activePointer.current = null
+    dragStart.current = null
+    setDragWall(null)
+    if (selected) onWallMove(selected)
+  }
 
   return (
     <div className="board-frame">
       <svg
-        className="board"
+        className={`board ${wallMode && dragWalls ? 'wall-dragging' : ''}`}
         viewBox={`0 0 ${dimension} ${dimension}`}
         role="group"
         aria-label={`${state.size} by ${state.size} Quoridor board`}
+        onPointerDown={(event) => {
+          if (disabled || !wallMode || !dragWalls || (event.pointerType === 'mouse' && event.button !== 0)) return
+          event.preventDefault()
+          activePointer.current = event.pointerId
+          dragStart.current = { x: event.clientX, y: event.clientY }
+          setDragWall(null)
+          event.currentTarget.setPointerCapture(event.pointerId)
+        }}
+        onPointerMove={(event) => {
+          if (activePointer.current !== event.pointerId) return
+          event.preventDefault()
+          setDragWall(wallFromPointer(event))
+        }}
+        onPointerUp={(event) => finishDrag(event, true)}
+        onPointerCancel={(event) => finishDrag(event, false)}
       >
         <defs>
           <filter id="pawn-shadow" x="-30%" y="-30%" width="160%" height="180%">
@@ -79,7 +142,7 @@ export function Board({ state, wallMode, orientation, disabled, onPawnMove, onWa
           />
         ))}
 
-        {wallMode && legalWalls.map((wall) => (
+        {wallMode && !dragWalls && legalWalls.map((wall) => (
           <g
             key={`slot-${wall.orientation}-${wall.row}-${wall.col}`}
             className="wall-target"
@@ -105,6 +168,18 @@ export function Board({ state, wallMode, orientation, disabled, onPawnMove, onWa
             />
           </g>
         ))}
+
+        {wallMode && dragWalls && dragWall && (
+          <rect
+            x={dragWall.orientation === 'horizontal' ? dragWall.col * PITCH + INSET : (dragWall.col + 1) * PITCH - 7}
+            y={dragWall.orientation === 'horizontal' ? (dragWall.row + 1) * PITCH - 7 : dragWall.row * PITCH + INSET}
+            width={dragWall.orientation === 'horizontal' ? PITCH * 2 - INSET * 2 : 14}
+            height={dragWall.orientation === 'horizontal' ? 14 : PITCH * 2 - INSET * 2}
+            rx="7"
+            className="wall-preview wall-preview-drag"
+            pointerEvents="none"
+          />
+        )}
 
         {state.pawns.map((pawn, player) => {
           const active = state.currentPlayer === player && state.winner === null

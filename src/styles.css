@@ -122,6 +122,8 @@ button:focus-visible { outline: 3px solid #fff2b8; outline-offset: 3px; }
   pointer-events: none;
 }
 .board { width: 100%; height: 100%; display: block; touch-action: manipulation; user-select: none; }
+.board.wall-dragging { touch-action: none; cursor: grab; }
+.board.wall-dragging:active { cursor: grabbing; }
 .board-bed { fill: #9a5f36; }
 .board-cell { fill: #ebc18f; stroke: rgba(105,56,30,.22); stroke-width: 1.5; }
 .board-cell-alt { fill: #e5b884; }
@@ -137,6 +139,7 @@ button:focus-visible { outline: 3px solid #fff2b8; outline-offset: 3px; }
 .wall-preview { fill: #f4c85d; opacity: .48; stroke: #fff4bd; stroke-width: 2; pointer-events: none; }
 .wall-target { cursor: pointer; }
 .wall-target:hover .wall-preview { opacity: .95; }
+.wall-preview-drag { opacity: .95; filter: drop-shadow(0 3px 4px rgba(59,35,12,.45)); }
 
 .pawn { transition: transform .2s cubic-bezier(.2,.85,.35,1.08); pointer-events: none; }
 .pawn-0 { fill: var(--coral); stroke: #8d392b; stroke-width: 3; }
@@ -170,15 +173,37 @@ button.wall-supply:disabled { opacity: .42; cursor: default; }
 .supply-avatar-1 i { border-radius: 1px; transform: rotate(45deg); }
 .wall-rack { height: 25px; display: flex; justify-content: center; align-items: center; position: relative; }
 .wall-rack i { width: 5px; height: 27px; margin: 0 3px; border-radius: 3px; background: linear-gradient(90deg, #814628, #d59554 52%, #754126); box-shadow: 1px 2px 2px rgba(0,0,0,.24); transform: rotate(calc((var(--piece) - 2.5) * 1deg)); }
-.wall-supply strong { font-size: .9rem; font-variant-numeric: tabular-nums; opacity: .88; }
+.wall-supply > strong { font-size: .9rem; font-variant-numeric: tabular-nums; opacity: .88; }
+.wall-supply.with-path { grid-template-columns: 32px 1fr 24px auto; }
 .wall-supply-1 { transform: scale(.88); opacity: .72; }
 .human-tools { min-height: 48px; display: flex; align-items: center; justify-content: center; gap: 10px; }
+
+.path-badge {
+  min-width: 57px;
+  height: 38px;
+  padding: 5px 9px;
+  border: 1px solid rgba(255,255,255,.13);
+  border-radius: 13px;
+  background: rgba(6,22,17,.3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #f8efde;
+}
+.path-badge i { width: 19px; height: 12px; border-top: 3px dashed var(--coral); border-right: 3px solid var(--coral); border-radius: 0 7px 0 0; transform: skewX(-18deg); }
+.path-badge-1 i { border-color: var(--blue); }
+.path-badge strong { font-size: .9rem; font-variant-numeric: tabular-nums; }
+.path-badge.compact { min-width: 51px; height: 31px; padding: 4px 7px; background: rgba(255,255,255,.05); }
+.path-badge.compact i { width: 15px; }
 
 .wall-buttons {
   display: grid;
   grid-template-columns: repeat(2, minmax(112px, 148px));
   gap: 8px;
 }
+.wall-buttons-drag { grid-template-columns: minmax(150px, 190px); }
+.wall-button-drag { grid-template-columns: 1fr 24px 22px; }
 .wall-button {
   min-height: 47px;
   padding: 5px 10px;
@@ -287,6 +312,7 @@ button.wall-supply:disabled { opacity: .42; cursor: default; }
   .play-area { grid-template-rows: 1fr; grid-template-columns: minmax(90px, 1fr) auto minmax(120px, 1fr); gap: 14px; padding: 0 56px; }
   .board-frame { width: min(78dvh, 72vw, 650px); height: min(78dvh, 72vw, 650px); }
   .wall-supply { min-width: 115px; width: min(160px, 17vw); grid-template-columns: 28px 1fr 18px; padding-inline: 8px; }
+  .wall-supply.with-path { width: min(205px, 24vw); grid-template-columns: 28px 1fr 18px auto; }
   .wall-supply-1 { grid-column: 1; transform: scale(.9); }
   .human-tools { grid-column: 3; flex-direction: column; }
   .wall-rack i { margin-inline: 1px; }
@@ -304,6 +330,7 @@ button.wall-supply:disabled { opacity: .42; cursor: default; }
   .play-area { gap: 7px; }
   .wall-supply { min-height: 40px; padding-block: 4px; }
   .wall-supply-1 { transform: scale(.82); }
+  .wall-supply.with-path { min-width: min(290px, 86vw); }
   .choices { grid-auto-flow: row; grid-template-columns: repeat(2, 1fr); }
   .wall-buttons { grid-template-columns: repeat(2, minmax(105px, 1fr)); }
   .wall-button { min-height: 43px; padding-inline: 7px; }
