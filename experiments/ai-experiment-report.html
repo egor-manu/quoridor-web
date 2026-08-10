@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Quoridor AI Experiment Report — 10 August 2026</title>
+<style>
+:root{font-family:Inter,system-ui,sans-serif;color:#18352d;background:#eef2ed}*{box-sizing:border-box}body{margin:0}main{max-width:1050px;margin:auto;padding:42px 22px 70px}header{padding:34px;border-radius:24px;background:linear-gradient(135deg,#123d31,#24634f);color:#fff;box-shadow:0 18px 50px #173d3225}h1{margin:6px 0 10px;font-size:clamp(2rem,5vw,3.5rem);letter-spacing:-.05em}.eyebrow{text-transform:uppercase;letter-spacing:.14em;font-weight:800;color:#f0c66b;font-size:.75rem}.lede{max-width:760px;line-height:1.6;color:#e7f0ec}.verdict{margin:24px 0 0;padding:15px 18px;border-left:5px solid #efb94e;background:#ffffff15;border-radius:8px}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:22px 0}.metric,.card{background:#fff;border:1px solid #d9e1dc;border-radius:18px;padding:20px;box-shadow:0 8px 24px #173d320a}.metric strong{display:block;font-size:2rem;letter-spacing:-.04em}.metric span{color:#60756c;font-size:.82rem}.bad strong{color:#b54834}.good strong{color:#267255}section{margin-top:34px}h2{font-size:1.45rem;margin:0 0 14px}p,li{line-height:1.58}.card p:last-child{margin-bottom:0}table{width:100%;border-collapse:collapse;background:#fff;border-radius:16px;overflow:hidden}th,td{text-align:left;padding:13px 15px;border-bottom:1px solid #e4e9e5}th{background:#e4ece7;font-size:.8rem;text-transform:uppercase;letter-spacing:.05em}tr:last-child td{border:0}.tag{display:inline-block;padding:4px 9px;border-radius:99px;font-size:.75rem;font-weight:800}.fail{background:#f9ddd7;color:#8d2e20}.pass{background:#daf0e4;color:#195d40}.warn{background:#faebc8;color:#75520b}.bar{height:12px;border-radius:8px;background:#e5ebe7;overflow:hidden}.bar i{display:block;height:100%;background:#2b8062}.bar.red i{background:#c9513b}.note{color:#667b72;font-size:.86rem}.flow{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;gap:12px;align-items:center}.flow .card{text-align:center}.arrow{font-size:1.5rem;color:#729084}code{background:#e7ece8;padding:2px 5px;border-radius:5px}@media(max-width:720px){.grid{grid-template-columns:1fr 1fr}.flow{grid-template-columns:1fr}.arrow{transform:rotate(90deg);text-align:center}}
+</style></head><body><main>
+<header><div class="eyebrow">Local experiment · not deployed</div><h1>A stronger, less repetitive Hard AI</h1><p class="lede">This pilot measured the incumbent’s repeatability, trained a compact CUDA value network from exact-rule self-play, and challenged a neural two-ply agent against a deterministic search proxy.</p><div class="verdict"><strong>Decision: NO-GO for this model.</strong> The experiment successfully exposed the failure mode, but the trained candidate is neither stronger nor more diverse. No browser code or weights should be rolled out from this run.</div></header>
+
+<div class="grid">
+ <div class="metric"><strong>5 / 5</strong><span>identical incumbent replies</span></div>
+ <div class="metric"><strong>3,474</strong><span>self-play positions</span></div>
+ <div class="metric good"><strong>88.8%</strong><span>position-label accuracy</span></div>
+ <div class="metric bad"><strong>0 / 10</strong><span>candidate match wins</span></div>
+</div>
+
+<section><h2>1. Incumbent diagnosis</h2><div class="card"><p>The browser’s current Hard search was run five times from the same standard 9×9 position after Player 1’s opening pawn move. Every run selected <code>pawn → row 2, column 5</code>. It completed depth 3 in roughly 902–911 ms (mean ≈907 ms), visiting 1,344–1,440 nodes.</p><p>The result follows directly from the implementation: Hard has zero noise, zero mistake probability, deterministic candidate ordering, a 900 ms budget, and at most 16 wall candidates. Replaying a position therefore replays the same principal variation.</p></div></section>
+
+<section><h2>2. Candidate tested</h2><div class="flow"><div class="card"><strong>Exact-rule self-play</strong><br><span class="note">24 games, 9×9 legality</span></div><div class="arrow">→</div><div class="card"><strong>CUDA value network</strong><br><span class="note">16→128→64→1, 10,497 params</span></div><div class="arrow">→</div><div class="card"><strong>Neural two-ply search</strong><br><span class="note">top-move temperature sampling</span></div></div><p class="note">Training used the NVIDIA GeForce RTX 4060 Laptop GPU through the existing <code>torch-gpu</code> environment. The saved PyTorch weights are an experiment artifact only.</p></section>
+
+<section><h2>3. Results</h2><table><thead><tr><th>Measure</th><th>Result</th><th>Assessment</th></tr></thead><tbody>
+<tr><td>Validation MSE after 80 epochs</td><td>0.301</td><td><span class="tag warn">Limited</span></td></tr>
+<tr><td>Validation sign accuracy</td><td>88.8%</td><td><span class="tag pass">Fit succeeded</span></td></tr>
+<tr><td>Alternating-colour match vs deterministic proxy</td><td>0 wins, 10 losses</td><td><span class="tag fail">Failed</span></td></tr>
+<tr><td>Distinct first-six-ply sequences across 12 seeds</td><td>1</td><td><span class="tag fail">No diversity</span></td></tr>
+<tr><td>Mean match length</td><td>71.2 plies</td><td><span class="tag warn">Long games</span></td></tr>
+<tr><td>Model parameters / JSON estimate</td><td>10,497 / 226,690 bytes</td><td><span class="tag pass">Browser-sized</span></td></tr>
+<tr><td>Total pilot runtime</td><td>239.4 seconds</td><td><span class="tag warn">Simulation-bound</span></td></tr>
+</tbody></table></section>
+
+<section><h2>4. Why high accuracy did not become strong play</h2><div class="card"><ol><li><strong>Outcome prediction is not policy improvement.</strong> The network learned correlations in shallow self-play but did not learn which counterfactual move changes the result.</li><li><strong>The corpus was small and correlated.</strong> A random position split allows positions from the same game into train and validation sets, inflating the apparent 88.8% accuracy.</li><li><strong>Exploration collapsed.</strong> The learned values produced one dominant opening, so root temperature could not create meaningful variety.</li><li><strong>CPU rules dominated runtime.</strong> CUDA training was fast; repeated pathfinding and legal-wall enumeration consumed most of the 239 seconds.</li><li><strong>The opponent in the 10-game match was a faithful deterministic Python proxy, not the time-budgeted TypeScript binary.</strong> These results reject the candidate, but must not be presented as a calibrated rating against the deployed Hard AI.</li></ol></div></section>
+
+<section><h2>5. Recommended next experiment</h2><div class="card"><p>Use a small AlphaZero-style <strong>policy + value residual network with PUCT</strong>, trained from visit-count targets rather than final outcomes alone. Canonical board planes should encode pawns, horizontal walls, vertical walls, remaining walls, and side to move. Export weights to ONNX or a compact typed-array format for Web Worker inference.</p><p>Before scaling self-play, replace repeated wall scans with bit-mask edge occupancy, cached legal transitions, and game-level train/validation splits. Add controlled root Dirichlet noise during training and sample only within a narrow visit-count band during play; forced wins and clearly superior moves remain deterministic.</p></div></section>
+
+<section><h2>6. Rollout gates</h2><table><thead><tr><th>Gate</th><th>Required threshold</th><th>This pilot</th></tr></thead><tbody>
+<tr><td>Strength vs deployed Hard, alternating colours</td><td>≥70% over ≥200 games</td><td><span class="tag fail">Not met</span></td></tr>
+<tr><td>Opening diversity</td><td>≥25 distinct six-ply lines / 50 seeds</td><td><span class="tag fail">Not met</span></td></tr>
+<tr><td>Rules correctness</td><td>0 illegal moves</td><td><span class="tag pass">Met in pilot</span></td></tr>
+<tr><td>Median contemporary-phone move time</td><td>≤1.5 seconds</td><td><span class="tag warn">Not measured</span></td></tr>
+<tr><td>Bundle cost</td><td>≤1 MB compressed model</td><td><span class="tag pass">Likely</span></td></tr>
+</tbody></table></section>
+
+<section><p class="note">Artifacts: <code>experiments/results.json</code>, <code>experiments/value_agent.pt</code>, <code>experiments/train_value_agent.py</code>, and the exact TypeScript repeatability probe <code>experiments/baseline.test.ts</code>. Generated locally on 10 August 2026. Nothing from this experiment was deployed.</p></section>
+</main></body></html>
