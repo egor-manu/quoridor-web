@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Board } from './components/Board'
 import { applyMove, createGame, isLegalMove, shortestPathLength } from './game/engine'
-import type { AiResult, GameState, Orientation, Position, Wall } from './game/types'
+import type { AiResult, GameState, Position, Wall } from './game/types'
 import type { Difficulty } from './ai/search'
 
 interface Preferences {
@@ -10,7 +10,6 @@ interface Preferences {
   sound: boolean
   showPathLengths: boolean
   manualBoth: boolean
-  dragWalls: boolean
   adaptiveRating: number
   games: number
   wins: number
@@ -24,7 +23,6 @@ const DEFAULTS: Preferences = {
   sound: true,
   showPathLengths: false,
   manualBoth: false,
-  dragWalls: false,
   adaptiveRating: 1000,
   games: 0,
   wins: 0,
@@ -66,8 +64,6 @@ export default function App() {
   const [preferences, setPreferences] = useState(loadPreferences)
   const [state, setState] = useState<GameState>(() => createGame(preferences.size))
   const [history, setHistory] = useState<GameState[]>([])
-  const [wallMode, setWallMode] = useState(false)
-  const [orientation, setOrientation] = useState<Orientation>('horizontal')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [thinking, setThinking] = useState(false)
   const [diagnostics, setDiagnostics] = useState<Omit<AiResult, 'move'> | null>(null)
@@ -148,7 +144,6 @@ export default function App() {
     manualSetupRef.current = preferences.manualBoth
     setState(createGame(size))
     setHistory([])
-    setWallMode(false)
     setSettingsOpen(false)
   }, [cancelThinking, preferences.manualBoth, preferences.size])
 
@@ -156,7 +151,6 @@ export default function App() {
     if (thinking || (!preferences.manualBoth && state.currentPlayer !== 0) || state.winner !== null || !isLegalMove(state, move)) return
     setHistory((items) => [...items, state])
     setState(applyMove(state, move))
-    setWallMode(false)
     playTone(move.type === 'wall' ? 'wall' : 'move', preferences.sound)
   }, [preferences.manualBoth, preferences.sound, state, thinking])
 
@@ -171,7 +165,6 @@ export default function App() {
     scoredGameRef.current = null
     setState(previous)
     setHistory((items) => items.slice(0, -1))
-    setWallMode(false)
     playTone('undo', preferences.sound)
   }, [cancelThinking, history, preferences.sound, state.turn, state.winner])
 
@@ -199,13 +192,10 @@ export default function App() {
       cancelThinking()
       manualSetupRef.current = true
     }
-    setWallMode(false)
     setPreferences((current) => ({ ...current, manualBoth: !current.manualBoth }))
   }
 
   const manualTurn = (preferences.manualBoth || state.currentPlayer === 0) && state.winner === null && !thinking
-  const controlledPlayer = preferences.manualBoth ? state.currentPlayer : 0
-  const canPlaceWall = manualTurn && state.wallsRemaining[controlledPlayer] > 0
   const pathLengths = useMemo(
     () => [shortestPathLength(state, 0), shortestPathLength(state, 1)] as const,
     [state],
@@ -236,31 +226,15 @@ export default function App() {
         />
         <Board
           state={state}
-          wallMode={wallMode}
-          orientation={orientation}
-          dragWalls={preferences.dragWalls}
           disabled={!manualTurn}
           onPawnMove={(to) => humanMove({ type: 'pawn', to })}
           onWallMove={(wall) => humanMove({ type: 'wall', wall })}
         />
-        <div className="human-tools">
-          {preferences.showPathLengths && <PathBadge player={0} length={pathLengths[0]} />}
-          <WallButtons
-            remaining={state.wallsRemaining[controlledPlayer]}
-            orientation={orientation}
-            wallMode={wallMode}
-            dragMode={preferences.dragWalls}
-            disabled={!canPlaceWall}
-            onSelect={(nextOrientation) => {
-              if (wallMode && orientation === nextOrientation) {
-                setWallMode(false)
-                return
-              }
-              setOrientation(nextOrientation)
-              setWallMode(true)
-            }}
-          />
-        </div>
+        <WallSupply
+          player={0}
+          remaining={state.wallsRemaining[0]}
+          pathLength={preferences.showPathLengths ? pathLengths[0] : undefined}
+        />
       </section>
 
       {state.winner !== null && (
@@ -308,18 +282,6 @@ export default function App() {
               ><span /></button>
             </div>
             <div className="setting-row">
-              <div><strong>Drag walls</strong><small>Slide to aim, then release to place</small></div>
-              <button
-                className={preferences.dragWalls ? 'switch on' : 'switch'}
-                onClick={() => {
-                  setWallMode(false)
-                  setPreferences((current) => ({ ...current, dragWalls: !current.dragWalls }))
-                }}
-                role="switch"
-                aria-checked={preferences.dragWalls}
-              ><span /></button>
-            </div>
-            <div className="setting-row">
               <div><strong>Sound</strong><small>Moves and celebrations</small></div>
               <button
                 className={preferences.sound ? 'switch on' : 'switch'}
@@ -359,55 +321,6 @@ function WallSupply({ player, remaining, pathLength }: {
     </>
   )
   return <div className={`wall-supply wall-supply-${player} ${pathLength !== undefined ? 'with-path' : ''}`} aria-label={`Player ${player + 1} has ${remaining} walls`}>{content}</div>
-}
-
-function WallButtons({ remaining, orientation, wallMode, dragMode, disabled, onSelect }: {
-  remaining: number
-  orientation: Orientation
-  wallMode: boolean
-  dragMode: boolean
-  disabled: boolean
-  onSelect: (orientation: Orientation) => void
-}) {
-  if (dragMode) {
-    return (
-      <div className="wall-buttons wall-buttons-drag" role="group" aria-label={`${remaining} walls remaining`}>
-        <button
-          className={`wall-button wall-button-drag ${wallMode ? 'active' : ''}`}
-          disabled={disabled}
-          onClick={() => onSelect(orientation)}
-          aria-label={`${wallMode ? 'Cancel wall placement' : 'Select a wall to drag'}, ${remaining} remaining`}
-          aria-pressed={wallMode}
-        >
-          <span className="wall-button-piece" aria-hidden="true" />
-          <span className="wall-button-arrow" aria-hidden="true">✥</span>
-          <strong>{remaining}</strong>
-        </button>
-      </div>
-    )
-  }
-
-  return (
-    <div className="wall-buttons" role="group" aria-label={`${remaining} walls remaining`}>
-      {(['horizontal', 'vertical'] as Orientation[]).map((direction) => {
-        const active = wallMode && orientation === direction
-        return (
-          <button
-            key={direction}
-            className={`wall-button wall-button-${direction} ${active ? 'active' : ''}`}
-            disabled={disabled}
-            onClick={() => onSelect(direction)}
-            aria-label={`${active ? 'Cancel' : 'Place'} ${direction} wall, ${remaining} remaining`}
-            aria-pressed={active}
-          >
-            <span className={`wall-button-piece wall-button-piece-${direction}`} aria-hidden="true" />
-            <span className="wall-button-arrow" aria-hidden="true">{direction === 'horizontal' ? '↔' : '↕'}</span>
-            <strong>{remaining}</strong>
-          </button>
-        )
-      })}
-    </div>
-  )
 }
 
 function PathBadge({ player, length, compact = false }: { player: 0 | 1; length: number; compact?: boolean }) {

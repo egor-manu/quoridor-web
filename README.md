@@ -1,6 +1,6 @@
 # Quoridor
 
-A polished, touch-first browser version of Quoridor for playing against a local AI or controlling both players locally. It supports 7×7, 9×9, and 11×11 boards, four difficulty modes, optional shortest-path lengths, tap or drag wall placement, undo, local preferences, and offline play. No account, backend, analytics, or network connection is needed after the first load.
+A polished, touch-first browser version of Quoridor for playing against a local AI or controlling both players locally. It supports 7×7, 9×9, and 11×11 boards, four difficulty modes, optional shortest-path lengths, unified tap-and-swipe controls, undo, local preferences, and offline play. No account, backend, analytics, or network connection is needed after the first load.
 
 **Live game:** https://egor-manu.github.io/quoridor-web/
 
